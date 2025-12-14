@@ -1032,6 +1032,8 @@ with tab8:
                              else:
                                  st.info(f"## ⚪ NEUTRE (Date: {last_date.date()})")
                                  st.write("### Les stratégies sont partagées ou neutres. Attente conseillée.")
+                        
+                        st.caption("ℹ️ **Note sur la Tendance** : Les stratégies de tendance (MA, MACD) sont désormais configurées en mode 'Continu'. Elles indiquent ACHAT tant que la tendance est haussière et VENTE tant que la tendance est baissière, réduisant ainsi les périodes 'Neutres'.")
 
                         st.divider()
                         

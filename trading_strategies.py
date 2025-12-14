@@ -182,13 +182,11 @@ class MACrossover(TradingStrategy):
         # Générer les signaux
         df['signal'] = 0
         
-        # Signal d'achat : MA courte croise MA longue vers le haut
-        df.loc[(df['ma_short'] > df['ma_long']) & 
-               (df['ma_short'].shift(1) <= df['ma_long'].shift(1)), 'signal'] = 1
+        # Signal continu : 1 si tendance haussière (MA Short > MA Long), -1 sinon
+        df['signal'] = np.where(df['ma_short'] > df['ma_long'], 1, -1)
         
-        # Signal de vente : MA courte croise MA longue vers le bas
-        df.loc[(df['ma_short'] < df['ma_long']) & 
-               (df['ma_short'].shift(1) >= df['ma_long'].shift(1)), 'signal'] = -1
+        # Gestion des NaN (début de l'historique)
+        df.loc[df['ma_long'].isna(), 'signal'] = 0
         
         return df
 
@@ -288,13 +286,11 @@ class MACDStrategy(TradingStrategy):
         # Générer les signaux
         df['signal'] = 0
         
-        # Signal d'achat : MACD croise signal vers le haut
-        df.loc[(df['macd'] > df['macd_signal']) & 
-               (df['macd'].shift(1) <= df['macd_signal'].shift(1)), 'signal'] = 1
+        # Signal continu : 1 si Momentum haussier (MACD > Signal), -1 sinon
+        df['signal'] = np.where(df['macd'] > df['macd_signal'], 1, -1)
         
-        # Signal de vente : MACD croise signal vers le bas
-        df.loc[(df['macd'] < df['macd_signal']) & 
-               (df['macd'].shift(1) >= df['macd_signal'].shift(1)), 'signal'] = -1
+        # Gestion des NaN
+        df.loc[df['macd_signal'].isna(), 'signal'] = 0
         
         return df
 
