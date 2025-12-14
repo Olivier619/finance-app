@@ -1,0 +1,371 @@
+"""
+Module de gestion de la base de données SQLite
+Tables: watchlist, alerts, portfolio_transactions, portfolio_holdings
+"""
+
+import sqlite3
+import os
+from datetime import datetime
+import json
+
+
+class Database:
+    def __init__(self, db_path='finance_app.db'):
+        """Initialise la connexion à la base de données"""
+        self.db_path = db_path
+        self.init_database()
+    
+    def get_connection(self):
+        """Retourne une connexion à la base de données"""
+        return sqlite3.connect(self.db_path)
+    
+    def init_database(self):
+        """Crée les tables si elles n'existent pas"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Table watchlist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                category TEXT,
+                added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            )
+        ''')
+        
+        # Table alerts
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                threshold_price REAL NOT NULL,
+                current_price REAL,
+                is_active INTEGER DEFAULT 1,
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                triggered_date TIMESTAMP,
+                email_sent INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Table portfolio_transactions
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                transaction_type TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                price REAL NOT NULL,
+                fees REAL DEFAULT 0,
+                total_amount REAL NOT NULL,
+                transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            )
+        ''')
+        
+        # Table portfolio_holdings
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio_holdings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                quantity REAL NOT NULL,
+                average_price REAL NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Table portfolio_cash
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio_cash (
+                id INTEGER PRIMARY KEY,
+                balance REAL NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Initialiser le cash si vide
+        cursor.execute('SELECT COUNT(*) FROM portfolio_cash')
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('INSERT INTO portfolio_cash (id, balance) VALUES (1, 100000.0)')
+        
+        conn.commit()
+        conn.close()
+    
+    # --- WATCHLIST ---
+    
+    def add_to_watchlist(self, symbol, category='', notes=''):
+        """Ajoute un symbole à la watchlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO watchlist (symbol, category, notes)
+                VALUES (?, ?, ?)
+            ''', (symbol.upper(), category, notes))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False  # Symbole déjà dans la watchlist
+        finally:
+            conn.close()
+    
+    def remove_from_watchlist(self, symbol):
+        """Retire un symbole de la watchlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM watchlist WHERE symbol = ?', (symbol.upper(),))
+        conn.commit()
+        conn.close()
+    
+    def get_watchlist(self):
+        """Retourne tous les symboles de la watchlist"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT symbol, category, added_date, notes FROM watchlist ORDER BY added_date DESC')
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {'symbol': r[0], 'category': r[1], 'added_date': r[2], 'notes': r[3]}
+            for r in results
+        ]
+    
+    # --- ALERTS ---
+    
+    def create_alert(self, symbol, alert_type, threshold_price, current_price=None):
+        """Crée une nouvelle alerte de prix"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO alerts (symbol, alert_type, threshold_price, current_price)
+            VALUES (?, ?, ?, ?)
+        ''', (symbol.upper(), alert_type, threshold_price, current_price))
+        
+        conn.commit()
+        alert_id = cursor.lastrowid
+        conn.close()
+        
+        return alert_id
+    
+    def get_active_alerts(self):
+        """Retourne toutes les alertes actives"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, symbol, alert_type, threshold_price, current_price, created_date
+            FROM alerts
+            WHERE is_active = 1
+            ORDER BY created_date DESC
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'id': r[0], 'symbol': r[1], 'alert_type': r[2],
+                'threshold_price': r[3], 'current_price': r[4], 'created_date': r[5]
+            }
+            for r in results
+        ]
+    
+    def trigger_alert(self, alert_id):
+        """Marque une alerte comme déclenchée"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE alerts
+            SET is_active = 0, triggered_date = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (alert_id,))
+        
+        conn.commit()
+        conn.close()
+    
+    def delete_alert(self, alert_id):
+        """Supprime une alerte"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM alerts WHERE id = ?', (alert_id,))
+        conn.commit()
+        conn.close()
+    
+    def get_alert_history(self, limit=50):
+        """Retourne l'historique des alertes déclenchées"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT symbol, alert_type, threshold_price, triggered_date
+            FROM alerts
+            WHERE is_active = 0
+            ORDER BY triggered_date DESC
+            LIMIT ?
+        ''', (limit,))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {'symbol': r[0], 'alert_type': r[1], 'threshold': r[2], 'triggered': r[3]}
+            for r in results
+        ]
+    
+    # --- PORTFOLIO ---
+    
+    def add_transaction(self, symbol, transaction_type, quantity, price, fees=0, notes=''):
+        """Ajoute une transaction au portfolio"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        total_amount = (quantity * price) + fees
+        
+        cursor.execute('''
+            INSERT INTO portfolio_transactions
+            (symbol, transaction_type, quantity, price, fees, total_amount, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (symbol.upper(), transaction_type, quantity, price, fees, total_amount, notes))
+        
+        # Mettre à jour les holdings
+        if transaction_type == 'BUY':
+            self._update_holdings_buy(cursor, symbol.upper(), quantity, price)
+            self._update_cash(cursor, -total_amount)
+        elif transaction_type == 'SELL':
+            self._update_holdings_sell(cursor, symbol.upper(), quantity, price)
+            self._update_cash(cursor, total_amount - fees)
+        
+        conn.commit()
+        transaction_id = cursor.lastrowid
+        conn.close()
+        
+        return transaction_id
+    
+    def _update_holdings_buy(self, cursor, symbol, quantity, price):
+        """Met à jour les holdings après un achat"""
+        cursor.execute('SELECT quantity, average_price FROM portfolio_holdings WHERE symbol = ?', (symbol,))
+        result = cursor.fetchone()
+        
+        if result:
+            current_qty, current_avg = result
+            new_qty = current_qty + quantity
+            new_avg = ((current_qty * current_avg) + (quantity * price)) / new_qty
+            
+            cursor.execute('''
+                UPDATE portfolio_holdings
+                SET quantity = ?, average_price = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE symbol = ?
+            ''', (new_qty, new_avg, symbol))
+        else:
+            cursor.execute('''
+                INSERT INTO portfolio_holdings (symbol, quantity, average_price)
+                VALUES (?, ?, ?)
+            ''', (symbol, quantity, price))
+    
+    def _update_holdings_sell(self, cursor, symbol, quantity, price):
+        """Met à jour les holdings après une vente"""
+        cursor.execute('SELECT quantity FROM portfolio_holdings WHERE symbol = ?', (symbol,))
+        result = cursor.fetchone()
+        
+        if result:
+            current_qty = result[0]
+            new_qty = current_qty - quantity
+            
+            if new_qty <= 0:
+                cursor.execute('DELETE FROM portfolio_holdings WHERE symbol = ?', (symbol,))
+            else:
+                cursor.execute('''
+                    UPDATE portfolio_holdings
+                    SET quantity = ?, last_updated = CURRENT_TIMESTAMP
+                    WHERE symbol = ?
+                ''', (new_qty, symbol))
+    
+    def _update_cash(self, cursor, amount):
+        """Met à jour le solde de cash"""
+        cursor.execute('''
+            UPDATE portfolio_cash
+            SET balance = balance + ?, last_updated = CURRENT_TIMESTAMP
+            WHERE id = 1
+        ''', (amount,))
+    
+    def get_cash_balance(self):
+        """Retourne le solde de cash"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT balance FROM portfolio_cash WHERE id = 1')
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result[0] if result else 0.0
+    
+    def get_holdings(self):
+        """Retourne tous les holdings"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT symbol, quantity, average_price, last_updated
+            FROM portfolio_holdings
+            ORDER BY symbol
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {'symbol': r[0], 'quantity': r[1], 'avg_price': r[2], 'last_updated': r[3]}
+            for r in results
+        ]
+    
+    def get_transaction_history(self, symbol=None, limit=100):
+        """Retourne l'historique des transactions"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if symbol:
+            cursor.execute('''
+                SELECT symbol, transaction_type, quantity, price, fees, total_amount, transaction_date
+                FROM portfolio_transactions
+                WHERE symbol = ?
+                ORDER BY transaction_date DESC
+                LIMIT ?
+            ''', (symbol.upper(), limit))
+        else:
+            cursor.execute('''
+                SELECT symbol, transaction_type, quantity, price, fees, total_amount, transaction_date
+                FROM portfolio_transactions
+                ORDER BY transaction_date DESC
+                LIMIT ?
+            ''', (limit,))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'symbol': r[0], 'type': r[1], 'quantity': r[2],
+                'price': r[3], 'fees': r[4], 'total': r[5], 'date': r[6]
+            }
+            for r in results
+        ]
+    
+    def reset_portfolio(self, initial_cash=100000.0):
+        """Réinitialise le portfolio"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM portfolio_transactions')
+        cursor.execute('DELETE FROM portfolio_holdings')
+        cursor.execute('UPDATE portfolio_cash SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE id = 1', (initial_cash,))
+        
+        conn.commit()
+        conn.close()
