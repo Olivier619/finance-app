@@ -149,6 +149,31 @@ def cached_fetch_data(symbol, period='1y'):
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)  # Cache pendant 1 heure
+def get_asset_name(symbol):
+    """
+    Récupère le nom complet de l'actif
+    
+    Args:
+        symbol: Symbole de l'actif
+    
+    Returns:
+        str: Nom de l'actif
+    """
+    import yfinance as yf
+    
+    if not symbol:
+        return ""
+        
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        name = info.get('longName') or info.get('shortName') or symbol
+        return name
+    except:
+        return symbol
+
+
 def get_color_for_change(change):
     """
     Retourne une couleur basée sur le changement

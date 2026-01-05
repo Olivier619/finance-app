@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 class PaperTrading:
-    def __init__(self, initial_cash=100000.0):
+    def __init__(self, initial_cash=1000000.0):
         self.db = Database()
         
         # Vérifier si le portfolio est vide et initialiser si nécessaire
@@ -205,7 +205,7 @@ class PaperTrading:
         """Retourne l'historique des transactions"""
         return self.db.get_transaction_history(symbol, limit)
     
-    def reset_portfolio(self, initial_cash=100000.0):
+    def reset_portfolio(self, initial_cash=1000000.0):
         """Réinitialise le portfolio"""
         self.db.reset_portfolio(initial_cash)
         return {'success': True, 'message': f'Portfolio réinitialisé avec ${initial_cash:.2f}'}

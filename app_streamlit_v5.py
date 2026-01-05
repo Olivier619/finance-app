@@ -137,6 +137,9 @@ with st.sidebar:
         symbol_input = SECTEURS_ETF.get(choix, choix)
     
     st.caption(f"Symbole : **{symbol_input}**")
+    asset_name = get_asset_name(symbol_input)
+    if asset_name and asset_name != symbol_input:
+        st.write(f"🏢 **{asset_name}**")
     
     # Bouton d'analyse
     analyser = st.button("⚡ Analyser", type="primary", use_container_width=True)
@@ -161,6 +164,10 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
 with tab1:
     if analyser:
         with st.spinner(f"Analyse de {symbol_input}..."):
+            # Nom de l'actif
+            asset_name = get_asset_name(symbol_input)
+            st.header(f"📊 {asset_name if asset_name else symbol_input} ({symbol_input})")
+            
             # Récupérer les données
             df = cached_fetch_data(symbol_input, period='10y')
             
@@ -429,6 +436,9 @@ with tab2:
             col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
             
             col1.write(f"**{row['symbol']}**")
+            asset_name_wl = get_asset_name(row['symbol'])
+            if asset_name_wl and asset_name_wl != row['symbol']:
+                col1.caption(asset_name_wl)
             col2.write(row['category'])
             
             if row['current_price'] != 'N/A' and row['current_price'] != 'Error':
@@ -482,6 +492,9 @@ with tab3:
             col1, col2, col3, col4, col5 = st.columns([2, 1, 2, 2, 1])
             
             col1.write(f"**{alert['symbol']}**")
+            asset_name_al = get_asset_name(alert['symbol'])
+            if asset_name_al and asset_name_al != alert['symbol']:
+                col1.caption(asset_name_al)
             col2.write(alert['alert_type'])
             col3.write(f"Seuil: {format_currency(alert['threshold_price'])}")
             col4.write(f"Créée: {alert['created_date'][:10]}")
@@ -555,6 +568,9 @@ with tab4:
             col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
             
             col1.write(f"**{pos['symbol']}**")
+            asset_name_pt = get_asset_name(pos['symbol'])
+            if asset_name_pt and asset_name_pt != pos['symbol']:
+                col1.caption(asset_name_pt)
             col2.write(f"{pos['quantity']:.0f} actions")
             col3.write(f"Avg: {format_currency(pos['avg_price'])}")
             col4.write(f"Now: {format_currency(pos['current_price'])}")
@@ -607,6 +623,10 @@ with tab5:
             articles = objects['news'].get_news(news_symbol, days=7, max_articles=10)
             
             if articles:
+                # Nom de l'actif
+                asset_name_news = get_asset_name(news_symbol)
+                st.write(f"📰 **{asset_name_news if asset_name_news else news_symbol}** ({news_symbol})")
+                
                 # Analyse de sentiment
                 analyzed_articles = objects['sentiment'].analyze_news_batch(articles)
                 sentiment_agg = objects['sentiment'].calculate_aggregate_sentiment(analyzed_articles)
@@ -720,7 +740,8 @@ with tab6:
                 
                 if results:
                     # Afficher les résultats
-                    st.success(f"✅ Backtesting terminé ! {results['total_predictions']} prédictions testées")
+                    asset_name_bt = get_asset_name(backtest_symbol)
+                    st.success(f"✅ Backtesting terminé pour **{asset_name_bt if asset_name_bt else backtest_symbol}** ({backtest_symbol}) ! {results['total_predictions']} prédictions testées")
                     
                     st.divider()
                     
@@ -866,6 +887,10 @@ with tab7:
     
     if run_strat and strategies_to_test:
         with st.spinner(f"Backtesting de {len(strategies_to_test)} stratégies sur {strat_symbol}..."):
+            # Nom de l'actif
+            asset_name_strat = get_asset_name(strat_symbol)
+            st.write(f"🔬 **{asset_name_strat if asset_name_strat else strat_symbol}** ({strat_symbol})")
+            
             # Récupérer données
             df_strat = cached_fetch_data(strat_symbol, period=period_years)
             
@@ -1014,7 +1039,8 @@ with tab8:
                     if res_coupled:
                         # --- AFFICHAGE DU SIGNAL ACTUEL ---
                         st.divider()
-                        st.subheader("📢 Signal Actuel")
+                        asset_name_synth = get_asset_name(synth_symbol)
+                        st.subheader(f"📢 Signal Actuel : {asset_name_synth if asset_name_synth else synth_symbol} ({synth_symbol})")
                         
                         # Recalculer les signaux sur la dernière ligne pour l'état actuel
                         df_signals = coupled.generate_signals(df_synth)

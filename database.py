@@ -88,7 +88,7 @@ class Database:
         # Initialiser le cash si vide
         cursor.execute('SELECT COUNT(*) FROM portfolio_cash')
         if cursor.fetchone()[0] == 0:
-            cursor.execute('INSERT INTO portfolio_cash (id, balance) VALUES (1, 100000.0)')
+            cursor.execute('INSERT INTO portfolio_cash (id, balance) VALUES (1, 1000000.0)')
         
         conn.commit()
         conn.close()
@@ -358,7 +358,7 @@ class Database:
             for r in results
         ]
     
-    def reset_portfolio(self, initial_cash=100000.0):
+    def reset_portfolio(self, initial_cash=1000000.0):
         """Réinitialise le portfolio"""
         conn = self.get_connection()
         cursor = conn.cursor()
