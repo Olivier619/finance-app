@@ -547,6 +547,17 @@ with tab4:
             else:
                 st.info("Aucun nouveau dividende à créditer.")
     
+    
+    # Bouton de réinitialisation
+    if st.button("🔄 Réinitialiser Portfolio (1M USD)", type="secondary", help="Efface tout et remet à 1M USD"):
+        if st.session_state.get('confirm_reset', False):
+            objects['paper_trading'].reset_portfolio(1000000.0)
+            st.session_state['confirm_reset'] = False
+            st.success("✅ Portfolio réinitialisé à 1,000,000 USD !")
+            st.rerun()
+        else:
+            st.session_state['confirm_reset'] = True
+            st.warning("⚠️ Cliquez à nouveau pour confirmer la réinitialisation.")
     st.divider()
     
     # Trading
@@ -1189,3 +1200,4 @@ with tab8:
 # Footer
 st.divider()
 st.caption(f"Market Predictor Pro V5 - {len(objects)} modules actifs | Données fournies par yfinance")
+#
