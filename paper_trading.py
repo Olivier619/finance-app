@@ -191,6 +191,9 @@ class PaperTrading:
         total_pnl = total_current_value - total_invested
         total_pnl_pct = (total_pnl / total_invested) * 100 if total_invested != 0 else 0
         
+        # Ajouter les dividendes au résumé
+        total_dividends = self.db.get_total_dividends()
+        
         return {
             'cash': cash,
             'total_invested': total_invested,
@@ -198,6 +201,7 @@ class PaperTrading:
             'total_portfolio_value': total_portfolio_value,
             'total_pnl': total_pnl,
             'total_pnl_pct': total_pnl_pct,
+            'total_dividends': total_dividends,
             'positions': positions
         }
     
@@ -209,3 +213,62 @@ class PaperTrading:
         """Réinitialise le portfolio"""
         self.db.reset_portfolio(initial_cash)
         return {'success': True, 'message': f'Portfolio réinitialisé avec ${initial_cash:.2f}'}
+
+    def process_dividends(self):
+        """Vérifie et crédite les dividendes pour tous les symboles détenus ou déjà détenus"""
+        # Récupérer tous les symboles ayant eu des transactions
+        history = self.db.get_transaction_history(limit=5000)
+        symbols = list(set([t['symbol'] for t in history]))
+        
+        if not symbols:
+            return 0
+            
+        count = 0
+        for symbol in symbols:
+            try:
+                ticker = yf.Ticker(symbol)
+                divs = ticker.dividends
+                
+                if divs.empty:
+                    continue
+                    
+                # Pour chaque dividende dans l'historique
+                for date, amount in divs.items():
+                    # Date format string pour la DB
+                    date_str = date.strftime('%Y-%m-%d')
+                    
+                    # Si déjà traité, on skip
+                    if self.db.is_dividend_processed(symbol, date_str):
+                        continue
+                        
+                    # Calculer la quantité détenue à la date ex-dividende
+                    # On somme les BUY/SELL avant cette date
+                    quantity = 0
+                    for t in history:
+                        if t['symbol'] == symbol and t['date'] < date_str:
+                            if t['type'] == 'BUY':
+                                quantity += t['quantity']
+                            elif t['type'] == 'SELL':
+                                quantity -= t['quantity']
+                    
+                    # Si on détenait des actions, on paie
+                    if quantity > 0.001: # Marge d'erreur flottant
+                        total_amount = quantity * amount
+                        if self.db.add_dividend_payment(symbol, date_str, amount, quantity, total_amount):
+                            count += 1
+            except Exception as e:
+                print(f"Erreur dividendes pour {symbol}: {e}")
+                continue
+        return count
+
+    def get_dividend_history(self, limit=50):
+        """Retourne l'historique des dividendes perçus"""
+        return self.db.get_dividend_history(limit)
+
+    def export_portfolio(self):
+        """Exporte les données pour sauvegarde"""
+        return self.db.export_data()
+
+    def import_portfolio(self, data):
+        """Importe des données de sauvegarde"""
+        return self.db.import_data(data)

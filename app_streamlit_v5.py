@@ -533,6 +533,19 @@ with tab4:
     col4.metric("P&L Total", format_currency(summary['total_pnl']), 
                 f"{summary['total_pnl_pct']:.2f}%", delta_color=pnl_color)
     
+    # Dividendes cumulés
+    st.write(f"💰 **Total Dividendes Perçus : {format_currency(summary['total_dividends'])}**")
+    
+    # Bouton de rafraîchissement des dividendes
+    if st.button("🔄 Vérifier les Dividendes", help="Vérifie si de nouveaux dividendes ont été payés"):
+        with st.spinner("Vérification des dividendes..."):
+            count = objects['paper_trading'].process_dividends()
+            if count > 0:
+                st.success(f"{count} nouveaux dividendes crédités !")
+                st.rerun()
+            else:
+                st.info("Aucun nouveau dividende à créditer.")
+    
     st.divider()
     
     # Trading
@@ -584,6 +597,18 @@ with tab4:
     
     st.divider()
     
+    # Historique des dividendes
+    with st.expander("📝 Historique des Dividendes"):
+        div_history = objects['paper_trading'].get_dividend_history()
+        if div_history:
+            df_divs = pd.DataFrame(div_history)
+            st.dataframe(df_divs[['symbol', 'ex_date', 'amount_per_share', 'quantity', 'total_amount']], 
+                        use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucun dividende perçu pour le moment.")
+            
+    st.divider()
+    
     # Métriques de performance
     st.write("**Métriques de Performance**")
     
@@ -609,6 +634,38 @@ with tab4:
                    help="Ratio gains/pertes (>1 = profitable)")
     else:
         st.info("💡 Effectuez des trades pour voir les métriques de performance")
+
+    st.divider()
+    
+    # Sauvegarde et Restauration
+    st.write("📂 **Sauvegarde & Restauration**")
+    col_exp, col_imp = st.columns(2)
+    
+    with col_exp:
+        # Export
+        data_json = json.dumps(objects['paper_trading'].export_portfolio(), indent=2)
+        st.download_button(
+            label="💾 Exporter le Portfolio (JSON)",
+            data=data_json,
+            file_name=f"portfolio_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        
+    with col_imp:
+        # Import
+        uploaded_file = st.file_uploader("Restaurer un Portfolio", type="json")
+        if uploaded_file is not None:
+            if st.button("📂 Importer ce Portfolio", type="secondary", use_container_width=True):
+                try:
+                    import_data = json.load(uploaded_file)
+                    if objects['paper_trading'].import_portfolio(import_data):
+                        st.success("✅ Portfolio restauré avec succès !")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erreur lors de l'importation.")
+                except Exception as e:
+                    st.error(f"❌ Fichier invalide : {e}")
 
 # ===== ONGLET 5: NEWS & SENTIMENT =====
 with tab5:

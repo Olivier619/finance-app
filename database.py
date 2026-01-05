@@ -76,6 +76,20 @@ class Database:
             )
         ''')
         
+        # Table portfolio_dividends
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio_dividends (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                ex_date TEXT NOT NULL,
+                amount_per_share REAL NOT NULL,
+                quantity REAL NOT NULL,
+                total_amount REAL NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, ex_date)
+            )
+        ''')
+        
         # Table portfolio_cash
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS portfolio_cash (
@@ -365,7 +379,133 @@ class Database:
         
         cursor.execute('DELETE FROM portfolio_transactions')
         cursor.execute('DELETE FROM portfolio_holdings')
+        cursor.execute('DELETE FROM portfolio_dividends')
         cursor.execute('UPDATE portfolio_cash SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE id = 1', (initial_cash,))
         
         conn.commit()
         conn.close()
+
+    # --- DIVIDENDS ---
+    
+    def add_dividend_payment(self, symbol, ex_date, amount_per_share, quantity, total_amount):
+        """Enregistre un paiement de dividende"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT INTO portfolio_dividends (symbol, ex_date, amount_per_share, quantity, total_amount)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (symbol.upper(), ex_date, amount_per_share, quantity, total_amount))
+            
+            # Créditer le cash
+            self._update_cash(cursor, total_amount)
+            
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False # Déjà payé
+        finally:
+            conn.close()
+            
+    def is_dividend_processed(self, symbol, ex_date):
+        """Vérifie si un dividende a déjà été traité"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id FROM portfolio_dividends WHERE symbol = ? AND ex_date = ?', (symbol.upper(), ex_date))
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result is not None
+        
+    def get_dividend_history(self, limit=50):
+        """Retourne l'historique des dividendes"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT symbol, ex_date, amount_per_share, quantity, total_amount, timestamp
+            FROM portfolio_dividends
+            ORDER BY ex_date DESC
+            LIMIT ?
+        ''', (limit,))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'symbol': r[0], 'ex_date': r[1], 'amount_per_share': r[2], 
+                'quantity': r[3], 'total_amount': r[4], 'timestamp': r[5]
+            }
+            for r in results
+        ]
+
+    def get_total_dividends(self):
+        """Retourne le montant total des dividendes perçus"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT SUM(total_amount) FROM portfolio_dividends')
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result[0] if result[0] else 0.0
+
+    # --- BACKUP / RESTORE ---
+
+    def export_data(self):
+        """Exporte toutes les données du portfolio en dict"""
+        data = {
+            'transactions': self.get_transaction_history(limit=1000),
+            'holdings': self.get_holdings(),
+            'cash': self.get_cash_balance(),
+            'dividends': self.get_dividend_history(limit=1000)
+        }
+        return data
+
+    def import_data(self, data):
+        """Importe et écrase les données du portfolio"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Vider les tables
+            cursor.execute('DELETE FROM portfolio_transactions')
+            cursor.execute('DELETE FROM portfolio_holdings')
+            cursor.execute('DELETE FROM portfolio_dividends')
+            
+            # Restaurer le cash
+            cursor.execute('UPDATE portfolio_cash SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE id = 1', (data.get('cash', 1000000.0),))
+            
+            # Restaurer les holdings
+            for h in data.get('holdings', []):
+                cursor.execute('''
+                    INSERT INTO portfolio_holdings (symbol, quantity, average_price, last_updated)
+                    VALUES (?, ?, ?, ?)
+                ''', (h['symbol'], h['quantity'], h['avg_price'], h['last_updated']))
+                
+            # Restaurer les transactions
+            for t in data.get('transactions', []):
+                cursor.execute('''
+                    INSERT INTO portfolio_transactions 
+                    (symbol, transaction_type, quantity, price, fees, total_amount, transaction_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (t['symbol'], t['type'], t['quantity'], t['price'], t['fees'], t['total'], t['date']))
+                
+            # Restaurer les dividendes
+            for d in data.get('dividends', []):
+                cursor.execute('''
+                    INSERT INTO portfolio_dividends (symbol, ex_date, amount_per_share, quantity, total_amount, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (d['symbol'], d['ex_date'], d['amount_per_share'], d['quantity'], d['total_amount'], d['timestamp']))
+                
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erreur lors de l'import : {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
