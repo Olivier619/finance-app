@@ -1,0 +1,16 @@
+streamlit
+pandas
+yfinance
+alpha-vantage
+finnhub-python
+python-dotenv
+plotly
+scikit-learn
+pandas-ta
+requests
+flask
+scipy
+textblob
+newsapi-python
+pytest
+numpy
